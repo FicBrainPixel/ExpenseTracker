@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import OAuthClient from "intuit-oauth";
+import axios from "axios";
 
 const app = express();
 dotenv.config();
@@ -110,6 +111,59 @@ app.post("/disconnect", async (req, res) => {
   } catch (error) {
     console.error("Disconnect error", error);
     res.status(400).json({ error: "Unable to disconnect" });
+  }
+});
+
+app.post("/create-customer", async (req, res) => {
+  try {
+    const accessToken = oauth2_token_json.access_token;
+    const realmId = oauth2_token_json.realmId;
+
+    const customerPayload = {
+      DisplayName: req.body.name || "Test Customer",
+      PrimaryEmailAddr: {
+        Address: req.body.email || "test@example.com",
+      },
+    };
+
+    const response = await axios.post(
+      `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/customer`,
+      customerPayload,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    res.json(response.data);
+  } catch (err) {
+    console.error("Error creating customer", err.response?.data || err);
+    res.status(500).json({ error: "Failed to create customer" });
+  }
+});
+
+app.get("/get-customers", async (req, res) => {
+  try {
+    const accessToken = oauth2_token_json.access_token;
+    const realmId = oauth2_token_json.realmId;
+
+    const response = await axios.get(
+      `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT * FROM Customer`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+      }
+    );
+
+    res.json(response.data);
+  } catch (err) {
+    console.error("Error fetching customers", err.response?.data || err);
+    res.status(500).json({ error: "Failed to fetch customers" });
   }
 });
 
