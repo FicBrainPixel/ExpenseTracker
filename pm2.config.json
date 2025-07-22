@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "name": "Updated-backend",
+    "script": "./app.js",
+    "watch": true,
+    "env": {
+      "NODE_ENV": "production"
+    },
+    "autorestart": true
+  }
+}
