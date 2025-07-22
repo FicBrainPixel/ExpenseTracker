@@ -7,7 +7,24 @@ import OAuthClient from "intuit-oauth";
 const app = express();
 dotenv.config();
 
-app.use(cors());
+const allowedOrigins = [
+  "https://expensetraker-5cfea.web.app", // ✅ Your deployed Flutter web app
+  "http://localhost:53371",              // ✅ Local dev environment (optional)
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like curl or Postman) or valid domains
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
