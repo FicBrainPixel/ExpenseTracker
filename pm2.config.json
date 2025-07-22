@@ -1,6 +1,6 @@
 {
   "apps": {
-    "name": "Updated-backend",
+    "name": "ExpenseTracker",
     "script": "./app.js",
     "watch": true,
     "env": {
