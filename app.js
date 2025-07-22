@@ -23,18 +23,32 @@ const getOAuthClient = () =>
   });
 
 app.get("/authUri", (req, res) => {
-  oauthClient = getOAuthClient();
-  const authUri = oauthClient.authorizeUri({
-    scope: [
-      OAuthClient.scopes.Accounting,
-      OAuthClient.scopes.OpenId,
-      OAuthClient.scopes.Profile,
-      OAuthClient.scopes.Email,
-    ],
-    state: "intuit-test",
-  });
-  res.send(authUri);
+  try {
+    oauthClient = new OAuthClient({
+      clientId: process.env.QUICKBOOKS_CLIENT_ID,
+      clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET,
+      environment: "sandbox",
+      redirectUri: process.env.QUICKBOOKS_REDIRECT_URI,
+    });
+
+    const authUri = oauthClient.authorizeUri({
+      scope: [
+        OAuthClient.scopes.Accounting,
+        OAuthClient.scopes.OpenId,
+        OAuthClient.scopes.Profile,
+        OAuthClient.scopes.Email,
+      ],
+      state: "intuit-test",
+    });
+
+    console.log("Auth URI:", authUri);
+    res.send(authUri);
+  } catch (err) {
+    console.error("Auth URI Error:", err);
+    res.status(500).send("Error generating authUri");
+  }
 });
+
 
 app.get("/callback", async (req, res) => {
   try {
