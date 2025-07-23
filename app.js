@@ -73,6 +73,10 @@ app.get("/callback", async (req, res) => {
     oauthClient = getOAuthClient();
     const authResponse = await oauthClient.createToken(req.url);
     oauth2_token_json = authResponse.getJson();
+
+    // ✅ Ensure realmId is included
+    oauth2_token_json.realmId = oauthClient.getToken().realmId;
+
     res.send(`<script>window.close();</script>`);
   } catch (e) {
     console.error("Callback error", e);
