@@ -4,18 +4,34 @@ import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import OAuthClient from "intuit-oauth";
 import axios from "axios";
+import { v4 as uuidv4 } from "uuid";
+import admin from "firebase-admin";
+
+// Initialize Firebase Admin SDK
+
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  admin.initializeApp({
+    credential: admin.credential.cert(
+      JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON)
+    ),
+  });
+} else {
+  console.error("Firebase Admin initialization failed:", error);
+  throw new Error("Firebase Admin SDK initialization failed");
+}
+
+const db = admin.firestore();
 
 const app = express();
 dotenv.config();
 
 const allowedOrigins = [
-  "https://expensetraker-5cfea.web.app", // ✅ Your deployed Flutter web app
-  "http://localhost:53371",              // ✅ Local dev environment (optional)
+  "https://expensetraker-5cfea.web.app",
+  "http://localhost:53371",
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like curl or Postman) or valid domains
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -36,7 +52,7 @@ const getOAuthClient = () =>
   new OAuthClient({
     clientId: process.env.QUICKBOOKS_CLIENT_ID,
     clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET,
-    environment: "sandbox", // or "sandbox"
+    environment: "sandbox",
     redirectUri: process.env.QUICKBOOKS_REDIRECT_URI,
   });
 
@@ -67,16 +83,12 @@ app.get("/authUri", (req, res) => {
   }
 });
 
-
 app.get("/callback", async (req, res) => {
   try {
     oauthClient = getOAuthClient();
     const authResponse = await oauthClient.createToken(req.url);
     oauth2_token_json = authResponse.getJson();
-
-    // ✅ Ensure realmId is included
     oauth2_token_json.realmId = oauthClient.getToken().realmId;
-
     res.send(`<script>window.close();</script>`);
   } catch (e) {
     console.error("Callback error", e);
@@ -171,7 +183,65 @@ app.get("/get-customers", async (req, res) => {
   }
 });
 
+app.post("/send-invitation", async (req, res) => {
+  try {
+    const { toEmail, workspaceId, workspaceName, inviterId } = req.body;
+
+    // Validate request body
+    if (!toEmail || !workspaceId || !workspaceName || !inviterId) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    // Verify Firebase ID token for authentication
+    const idToken = req.headers.authorization?.split("Bearer ")[1];
+    if (!idToken) {
+      return res
+        .status(401)
+        .json({ error: "Unauthorized: No ID token provided" });
+    }
+    await admin.auth().verifyIdToken(idToken);
+
+    // Generate a unique token
+    const token = uuidv4();
+    const expirationTime = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Store invitation in Firestore
+    await db.collection("invitations").add({
+      token,
+      workspaceId,
+      inviterId,
+      inviteeEmail: toEmail,
+      expirationTime,
+    });
+
+    // Create invitation link
+    const invitationLink = `https://expensetraker-5cfea.web.app/invite?token=${token}`;
+
+    // Send email via Resend
+    const response = await axios.post(
+      "https://api.resend.com/emails",
+      {
+        from: process.env.RESEND_SENDER_EMAIL,
+        to: toEmail,
+        subject: "Invitation to Join Workspace",
+        text: `You have been invited to join the workspace "${workspaceName}" on the Expense Tracker app.\nClick the link below to accept the invitation:\n${invitationLink}\nThis invitation will expire in 24 hours.`,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    res.json({ success: true, message: "Invitation sent successfully" });
+  } catch (error) {
+    console.error("Error sending invitation:", error.response?.data || error);
+    res.status(500).json({ error: "Failed to send invitation" });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`QuickBooks OAuth server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
