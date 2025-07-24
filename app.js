@@ -7,15 +7,21 @@ import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import admin from "firebase-admin";
 
+dotenv.config();
+
 // Initialize Firebase Admin SDK
 
-if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-  admin.initializeApp({
-    credential: admin.credential.cert(
-      JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON)
-    ),
-  });
-} else {
+try {
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    admin.initializeApp({
+      credential: admin.credential.cert(
+        JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON)
+      ),
+    });
+  } else {
+    throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON not set");
+  }
+} catch (error) {
   console.error("Firebase Admin initialization failed:", error);
   throw new Error("Firebase Admin SDK initialization failed");
 }
@@ -23,7 +29,6 @@ if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
 const db = admin.firestore();
 
 const app = express();
-dotenv.config();
 
 const allowedOrigins = [
   "https://expensetraker-5cfea.web.app",
