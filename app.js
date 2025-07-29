@@ -188,6 +188,49 @@ app.get("/get-customers", async (req, res) => {
   }
 });
 
+const entityMapping = {
+  "categories": "Account",
+  "clients": "Customer",
+  "employees": "Employee",
+  "expenses": "Purchase",
+  "merchants": "Vendor",
+  "payment-methods": "PaymentMethod",
+  "projects": "Project",
+  "tasks": "TimeActivity",
+  "vendors": "Vendor",
+  "customers": "Customer"
+};
+
+async function fetchEntity(entityName, accessToken, realmId) {
+  const response = await axios.get(
+    `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT * FROM ${entityName}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    }
+  );
+  return response.data;
+}
+
+app.get("/get-:item", async (req, res) => {
+  const item = req.params.item;
+  const entityName = entityMapping[item];
+  if (!entityName) {
+    return res.status(400).json({ error: "Invalid item" });
+  }
+  try {
+    const accessToken = oauth2_token_json.access_token;
+    const realmId = oauth2_token_json.realmId;
+    const data = await fetchEntity(entityName, accessToken, realmId);
+    res.json(data);
+  } catch (err) {
+    console.error(`Error fetching ${item}`, err.response?.data || err);
+    res.status(500).json({ error: `Failed to fetch ${item}` });
+  }
+});
+
 app.post("/send-invitation", async (req, res) => {
   try {
     const { toEmail, workspaceId, workspaceName, inviterId } = req.body;
