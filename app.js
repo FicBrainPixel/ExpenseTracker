@@ -63,7 +63,7 @@ const getOAuthClient = () =>
 
 app.get("/oauthClient-null", function (req, res) {
   try {
-    oauthClient = getOAuthClient;
+    oauthClient = getOAuthClient();
 
     res.status(200).json({
       message: "done",
@@ -76,7 +76,7 @@ app.get("/oauthClient-null", function (req, res) {
 
 app.get("/authUri", (req, res) => {
   try {
-    oauthClient = getOAuthClient;
+    oauthClient = getOAuthClient();
 
     const authUri = oauthClient.authorizeUri({
       scope: [
