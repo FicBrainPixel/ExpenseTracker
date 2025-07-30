@@ -62,11 +62,16 @@ const getOAuthClient = () =>
   });
 
 app.get("/oauthClient-null", function (req, res) {
-  oauthClient = getOAuthClient;
+  try {
+    oauthClient = getOAuthClient;
 
-  res.status(200).json({
-    message: "done",
-  });
+    res.status(200).json({
+      message: "done",
+    });
+  } catch (err) {
+    console.error("Error:", err);
+    res.status(500).send("Error setting OAuth");
+  }
 });
 
 app.get("/authUri", (req, res) => {
