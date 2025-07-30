@@ -189,16 +189,16 @@ app.get("/get-customers", async (req, res) => {
 });
 
 const entityMapping = {
-  "categories": "Account",
-  "clients": "Customer",
-  "employees": "Employee",
-  "expenses": "Purchase",
-  "merchants": "Item",
+  categories: "Account",
+  clients: "Customer",
+  employees: "Employee",
+  expenses: "Purchase",
+  merchants: "Item",
   "payment-methods": "PaymentMethod",
-  "projects": "Customer",
-  "tasks": "TimeActivity",
-  "vendors": "Vendor",
-  "customers": "Customer"
+  projects: "Customer",
+  tasks: "TimeActivity",
+  vendors: "Vendor",
+  customers: "Customer",
 };
 
 async function fetchEntity(entityName, accessToken, realmId) {
@@ -233,10 +233,24 @@ app.get("/get-:item", async (req, res) => {
 
 app.post("/send-invitation", async (req, res) => {
   try {
-    const { toEmail, workspaceId, workspaceName, inviterId } = req.body;
+    const {
+      workspaceId,
+      workspaceName,
+      inviterId,
+      inviteeName,
+      inviteeEmail,
+      inviteeRole,
+    } = req.body;
 
     // Validate request body
-    if (!toEmail || !workspaceId || !workspaceName || !inviterId) {
+    if (
+      !workspaceId ||
+      !workspaceName ||
+      !inviterId ||
+      !inviteeName ||
+      !inviteeEmail ||
+      !inviteeRole
+    ) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
@@ -255,15 +269,19 @@ app.post("/send-invitation", async (req, res) => {
 
     // Store invitation in Firestore
     await db.collection("invitations").add({
-      token,
-      workspaceId,
-      inviterId,
-      inviteeEmail: toEmail,
-      expirationTime,
+      token: token,
+      used: false,
+      workspaceId: workspaceId,
+      workspaceName: workspaceName,
+      inviterId: inviterId,
+      inviteeName: inviteeName,
+      inviteeEmail: inviteeEmail,
+      inviteeRole: inviteeRole,
+      expirationTime: expirationTime,
     });
 
     // Create invitation link
-    const invitationLink = `https://expensetraker-5cfea.web.app/invite?token=${token}`;
+    const invitationLink = `${process.env.WEB_URL}/invite?token=${token}`;
 
     // Send email via Resend
     const response = await axios.post(
@@ -272,7 +290,7 @@ app.post("/send-invitation", async (req, res) => {
         from: process.env.RESEND_SENDER_EMAIL,
         to: toEmail,
         subject: "Invitation to Join Workspace",
-        text: `You have been invited to join the workspace "${workspaceName}" on the Expense Tracker app.\nClick the link below to accept the invitation:\n${invitationLink}\nThis invitation will expire in 24 hours.`,
+        text: `You have been invited to join the workspace "${workspaceName}" on the CorpExpense.\nClick the link below to accept the invitation:\n${invitationLink}\nThis invitation will expire in 24 hours.`,
       },
       {
         headers: {
@@ -282,10 +300,70 @@ app.post("/send-invitation", async (req, res) => {
       }
     );
 
-    res.json({ success: true, message: "Invitation sent successfully" });
+    res.json({
+      success: true,
+      message: "Invitation sent successfully",
+      response: response,
+    });
   } catch (error) {
     console.error("Error sending invitation:", error.response?.data || error);
     res.status(500).json({ error: "Failed to send invitation" });
+  }
+});
+
+app.post("/validate-invite", async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    // Check if token is provided
+    if (!token) {
+      return res
+        .status(400)
+        .json({ valid: false, message: "Token is required" });
+    }
+
+    // Query Firestore for the token
+    const snapshot = await db
+      .collection("invitations")
+      .where("token", "==", token)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ valid: false, message: "Invalid token" });
+    }
+
+    const doc = snapshot.docs[0];
+    const data = doc.data();
+
+    // Check expiration
+    const now = new Date();
+    const expires =
+      data.expirationTime?.toDate?.() || new Date(data.expirationTime);
+    if (expires < now) {
+      return res.status(410).json({ valid: false, message: "Token expired" });
+    }
+
+    // Optional: if you add a `used` field later
+    // if (data.used) {
+    //   return res
+    //     .status(409)
+    //     .json({ valid: false, message: "Token already used" });
+    // }
+
+    // Success — return invite details for registration
+    return res.json({
+      valid: true,
+      workspaceId: data.workspaceId,
+      workspaceName: data.workspaceName,
+      inviterId: data.inviterId,
+      inviteeName: data.inviteeName,
+      inviteeEmail: data.inviteeEmail,
+      inviteeRole: data.inviteeRole,
+    });
+  } catch (error) {
+    console.error("Error validating invitation:", error);
+    return res.status(500).json({ valid: false, message: "Server error" });
   }
 });
 
