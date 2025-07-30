@@ -312,7 +312,7 @@ app.post("/send-invitation", async (req, res) => {
     res.json({
       success: true,
       message: "Invitation sent successfully",
-      response: response,
+      response: response.data,
     });
   } catch (error) {
     console.error("Error sending invitation:", error.response?.data || error);
