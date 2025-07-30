@@ -193,9 +193,9 @@ const entityMapping = {
   "clients": "Customer",
   "employees": "Employee",
   "expenses": "Purchase",
-  "merchants": "Vendor",
+  "merchants": "Item",
   "payment-methods": "PaymentMethod",
-  "projects": "Project",
+  "projects": "Customer",
   "tasks": "TimeActivity",
   "vendors": "Vendor",
   "customers": "Customer"
