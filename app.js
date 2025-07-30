@@ -61,14 +61,17 @@ const getOAuthClient = () =>
     redirectUri: process.env.QUICKBOOKS_REDIRECT_URI,
   });
 
+app.get("/oauthClient-null", function (req, res) {
+  oauthClient = getOAuthClient;
+
+  res.status(200).json({
+    message: "done",
+  });
+});
+
 app.get("/authUri", (req, res) => {
   try {
-    oauthClient = new OAuthClient({
-      clientId: process.env.QUICKBOOKS_CLIENT_ID,
-      clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET,
-      environment: "sandbox",
-      redirectUri: process.env.QUICKBOOKS_REDIRECT_URI,
-    });
+    oauthClient = getOAuthClient;
 
     const authUri = oauthClient.authorizeUri({
       scope: [
@@ -135,58 +138,58 @@ app.post("/disconnect", async (req, res) => {
   }
 });
 
-app.post("/create-customer", async (req, res) => {
-  try {
-    const accessToken = oauth2_token_json.access_token;
-    const realmId = oauth2_token_json.realmId;
+// app.post("/create-customer", async (req, res) => {
+//   try {
+//     const accessToken = oauth2_token_json.access_token;
+//     const realmId = oauth2_token_json.realmId;
 
-    const customerPayload = {
-      DisplayName: req.body.name || "Test Customer",
-      PrimaryEmailAddr: {
-        Address: req.body.email || "test@example.com",
-      },
-    };
+//     const customerPayload = {
+//       DisplayName: req.body.name || "Test Customer",
+//       PrimaryEmailAddr: {
+//         Address: req.body.email || "test@example.com",
+//       },
+//     };
 
-    const response = await axios.post(
-      `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/customer`,
-      customerPayload,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-      }
-    );
+//     const response = await axios.post(
+//       `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/customer`,
+//       customerPayload,
+//       {
+//         headers: {
+//           Authorization: `Bearer ${accessToken}`,
+//           Accept: "application/json",
+//           "Content-Type": "application/json",
+//         },
+//       }
+//     );
 
-    res.json(response.data);
-  } catch (err) {
-    console.error("Error creating customer", err.response?.data || err);
-    res.status(500).json({ error: "Failed to create customer" });
-  }
-});
+//     res.json(response.data);
+//   } catch (err) {
+//     console.error("Error creating customer", err.response?.data || err);
+//     res.status(500).json({ error: "Failed to create customer" });
+//   }
+// });
 
-app.get("/get-customers", async (req, res) => {
-  try {
-    const accessToken = oauth2_token_json.access_token;
-    const realmId = oauth2_token_json.realmId;
+// app.get("/get-customers", async (req, res) => {
+//   try {
+//     const accessToken = oauth2_token_json.access_token;
+//     const realmId = oauth2_token_json.realmId;
 
-    const response = await axios.get(
-      `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT * FROM Customer`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: "application/json",
-        },
-      }
-    );
+//     const response = await axios.get(
+//       `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT * FROM Customer`,
+//       {
+//         headers: {
+//           Authorization: `Bearer ${accessToken}`,
+//           Accept: "application/json",
+//         },
+//       }
+//     );
 
-    res.json(response.data);
-  } catch (err) {
-    console.error("Error fetching customers", err.response?.data || err);
-    res.status(500).json({ error: "Failed to fetch customers" });
-  }
-});
+//     res.json(response.data);
+//   } catch (err) {
+//     console.error("Error fetching customers", err.response?.data || err);
+//     res.status(500).json({ error: "Failed to fetch customers" });
+//   }
+// });
 
 const entityMapping = {
   categories: "Account",
