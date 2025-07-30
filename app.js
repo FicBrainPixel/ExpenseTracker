@@ -297,7 +297,7 @@ app.post("/send-invitation", async (req, res) => {
       "https://api.resend.com/emails",
       {
         from: process.env.RESEND_SENDER_EMAIL,
-        to: toEmail,
+        to: inviteeEmail,
         subject: "Invitation to Join Workspace",
         text: `You have been invited to join the workspace "${workspaceName}" on the CorpExpense.\nClick the link below to accept the invitation:\n${invitationLink}\nThis invitation will expire in 24 hours.`,
       },
