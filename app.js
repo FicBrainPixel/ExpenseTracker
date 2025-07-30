@@ -110,10 +110,11 @@ app.get("/callback", async (req, res) => {
 });
 
 app.get("/retrieveToken", (req, res) => {
-  if (!oauth2_token_json) {
-    return res.status(404).json({ error: "Token not found" });
+  try {
+    res.send(oauthClient);
+  } catch (err) {
+    res.status(500).json({ error: "Unable to retrive token" });
   }
-  res.json({ token: oauth2_token_json });
 });
 
 app.post("/refreshAccessToken", async (req, res) => {
