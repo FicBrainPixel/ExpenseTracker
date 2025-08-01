@@ -9,8 +9,6 @@ import admin from "firebase-admin";
 
 dotenv.config();
 
-// Initialize Firebase Admin SDK
-
 try {
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
     admin.initializeApp({
@@ -26,13 +24,14 @@ try {
   throw new Error("Firebase Admin SDK initialization failed");
 }
 
+// Initialize Firebase Admin SDK
 const db = admin.firestore();
 
 const app = express();
 
 const allowedOrigins = [
+  "https://corpexpense.flashcubeit.com"
   "https://expensetraker-5cfea.web.app",
-  "http://localhost:53371",
 ];
 
 const corsOptions = {
@@ -144,68 +143,10 @@ app.post("/disconnect", async (req, res) => {
   }
 });
 
-// app.post("/create-customer", async (req, res) => {
-//   try {
-//     const accessToken = oauth2_token_json.access_token;
-//     const realmId = oauth2_token_json.realmId;
-
-//     const customerPayload = {
-//       DisplayName: req.body.name || "Test Customer",
-//       PrimaryEmailAddr: {
-//         Address: req.body.email || "test@example.com",
-//       },
-//     };
-
-//     const response = await axios.post(
-//       `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/customer`,
-//       customerPayload,
-//       {
-//         headers: {
-//           Authorization: `Bearer ${accessToken}`,
-//           Accept: "application/json",
-//           "Content-Type": "application/json",
-//         },
-//       }
-//     );
-
-//     res.json(response.data);
-//   } catch (err) {
-//     console.error("Error creating customer", err.response?.data || err);
-//     res.status(500).json({ error: "Failed to create customer" });
-//   }
-// });
-
-// app.get("/get-customers", async (req, res) => {
-//   try {
-//     const accessToken = oauth2_token_json.access_token;
-//     const realmId = oauth2_token_json.realmId;
-
-//     const response = await axios.get(
-//       `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT * FROM Customer`,
-//       {
-//         headers: {
-//           Authorization: `Bearer ${accessToken}`,
-//           Accept: "application/json",
-//         },
-//       }
-//     );
-
-//     res.json(response.data);
-//   } catch (err) {
-//     console.error("Error fetching customers", err.response?.data || err);
-//     res.status(500).json({ error: "Failed to fetch customers" });
-//   }
-// });
-
 const entityMapping = {
   categories: "Account",
-  clients: "Customer",
   employees: "Employee",
-  expenses: "Purchase",
-  merchants: "Item",
   "payment-methods": "PaymentMethod",
-  projects: "Customer",
-  tasks: "TimeActivity",
   vendors: "Vendor",
   customers: "Customer",
 };
@@ -353,12 +294,11 @@ app.post("/validate-invite", async (req, res) => {
       return res.status(410).json({ valid: false, message: "Token expired" });
     }
 
-    // Optional: if you add a `used` field later
-    // if (data.used) {
-    //   return res
-    //     .status(409)
-    //     .json({ valid: false, message: "Token already used" });
-    // }
+    if (data.used) {
+      return res
+        .status(409)
+        .json({ valid: false, message: "Token already used" });
+    }
 
     // Success — return invite details for registration
     return res.json({
@@ -373,6 +313,25 @@ app.post("/validate-invite", async (req, res) => {
   } catch (error) {
     console.error("Error validating invitation:", error);
     return res.status(500).json({ valid: false, message: "Server error" });
+  }
+});
+
+app.post("/sync-to-qb", async (req, res) => {
+  const idToken = req.headers.authorization?.split('Bearer ')[1];
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    const userId = decoded.uid;
+
+    // Optional: Check if user is admin of workspace, etc.
+    if (!userIsAuthorized(userId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    await syncExpensesToQuickBooks(userId);
+    res.json({ success: true });
+  } catch (err) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
 });
 
