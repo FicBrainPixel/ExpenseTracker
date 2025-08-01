@@ -30,7 +30,7 @@ const db = admin.firestore();
 const app = express();
 
 const allowedOrigins = [
-  "https://corpexpense.flashcubeit.com"
+  "https://corpexpense.flashcubeit.com",
   "https://expensetraker-5cfea.web.app",
 ];
 
