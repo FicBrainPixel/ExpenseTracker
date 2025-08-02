@@ -181,6 +181,46 @@ app.get("/get-:item", async (req, res) => {
   }
 });
 
+app.post('/create-bills', async (req, res) => {
+  const bills = req.body.bills;
+  if (!Array.isArray(bills) || bills.length === 0) {
+    return res.status(400).json({ error: 'Request must include a non-empty bills array' });
+  }
+
+  try {
+    // await ensureAccessToken();
+
+    // Build the batch payload
+    const batchRequests = bills.map((bill, idx) => ({
+      bId:     `bill${idx + 1}`,
+      operation: 'create',
+      Bill:    bill
+    }));
+  
+    const batchPayload = { BatchItemRequest: batchRequests };
+    const accessToken = oauth2_token_json.access_token;
+    
+    // send to QuickBooks batch endpoint
+    const url = `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/batch`;
+    const qbResp = await axios.post(url, batchPayload, {
+      // params: { minorversion: 63 },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept:        'application/json',
+        'Content-Type':'application/json'
+      }
+    });
+
+    // return the raw QuickBooks response (or parse out successes/errors)
+    res.json(qbResp.data);
+  } catch (err) {
+    console.error('Error creating bills', err.response?.data || err.message);
+    res.status(500).json({
+      error: err.response?.data || 'Failed to create bills in QuickBooks'
+    });
+  }
+});
+
 app.post("/send-invitation", async (req, res) => {
   try {
     const {
