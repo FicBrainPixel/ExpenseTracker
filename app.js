@@ -201,15 +201,16 @@ app.post('/create-bills', async (req, res) => {
     const accessToken = oauth2_token_json.access_token;
     const realmId = oauth2_token_json.realmId;
 
+    console.log(JSON.stringify(batchPayload, null, 2));
+
     // send to QuickBooks batch endpoint
     const url = `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/batch`;
     const qbResp = await axios.post(url, batchPayload, {
       // params: { minorversion: 63 },
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        Accept:        'application/json',
-        'Content-Type':'application/json'
-      }
+        Accept: "application/json",
+      },
     });
 
     // return the raw QuickBooks response (or parse out successes/errors)
