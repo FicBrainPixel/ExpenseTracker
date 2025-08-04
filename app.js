@@ -67,7 +67,7 @@ app.post("/authUri", async (req, res) => {
     const userId = decodedToken.uid;
 
     const stateToken = uuidv4();
-    await db.collection("oauth_states").doc(stateToken).set({
+    await db.collection("oauthStates").doc(stateToken).set({
       userId,
       workspaceId,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -100,13 +100,13 @@ app.get("/callback", async (req, res) => {
     tokenJson.realmId = oauthClient.getToken().realmId;
 
     const stateToken = oauthClient.getToken().state;
-    const stateDoc = await db.collection("oauth_states").doc(stateToken).get();
+    const stateDoc = await db.collection("oauthStates").doc(stateToken).get();
     if (!stateDoc.exists) {
       throw new Error("Invalid state token");
     }
     const { workspaceId } = stateDoc.data();
 
-    await db.collection("quickbooks_tokens").doc(workspaceId).set({
+    await db.collection("quickbooksTokens").doc(workspaceId).set({
       workspaceId,
       accessToken: tokenJson.access_token,
       refreshToken: tokenJson.refresh_token,
@@ -117,7 +117,7 @@ app.get("/callback", async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    await db.collection("oauth_states").doc(stateToken).delete();
+    await db.collection("oauthStates").doc(stateToken).delete();
     res.send(`<script>window.close();</script>`);
   } catch (e) {
     console.error("Callback error", e);
@@ -133,7 +133,7 @@ app.post("/checkConnection", async (req, res) => {
     }
 
     await admin.auth().verifyIdToken(idToken);
-    const tokenDoc = await db.collection("quickbooks_tokens").doc(workspaceId).get();
+    const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
     if (!tokenDoc.exists) {
       return res.json({ connected: false });
     }
@@ -146,7 +146,7 @@ app.post("/checkConnection", async (req, res) => {
       const oauthClient = getOAuthClient();
       const response = await oauthClient.refreshUsingToken(tokenData.refreshToken);
       const newToken = response.getJson();
-      await db.collection("quickbooks_tokens").doc(workspaceId).update({
+      await db.collection("quickbooksTokens").doc(workspaceId).update({
         accessToken: newToken.access_token,
         refreshToken: newToken.refresh_token,
         expiresIn: newToken.expires_in,
@@ -169,12 +169,12 @@ app.post("/disconnect", async (req, res) => {
     }
 
     await admin.auth().verifyIdToken(idToken);
-    const tokenDoc = await db.collection("quickbooks_tokens").doc(workspaceId).get();
+    const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
     if (tokenDoc.exists) {
       const { accessToken } = tokenDoc.data();
       const oauthClient = getOAuthClient();
       await oauthClient.revoke({ access_token: accessToken });
-      await db.collection("quickbooks_tokens").doc(workspaceId).delete();
+      await db.collection("quickbooksTokens").doc(workspaceId).delete();
     }
 
     res.json({ result: "Disconnected" });
@@ -214,7 +214,7 @@ app.post("/get-entity", async (req, res) => {
 
   try {
     await admin.auth().verifyIdToken(idToken);
-    const tokenDoc = await db.collection("quickbooks_tokens").doc(workspaceId).get();
+    const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
     if (!tokenDoc.exists) {
       return res.status(401).json({ error: "Not connected to QuickBooks" });
     }
@@ -228,7 +228,7 @@ app.post("/get-entity", async (req, res) => {
       const response = await oauthClient.refreshUsingToken(refreshToken);
       const newToken = response.getJson();
       accessToken = newToken.access_token;
-      await db.collection("quickbooks_tokens").doc(workspaceId).update({
+      await db.collection("quickbooksTokens").doc(workspaceId).update({
         accessToken: newToken.access_token,
         refreshToken: newToken.refresh_token,
         expiresIn: newToken.expires_in,
@@ -252,7 +252,7 @@ app.post("/create-bills", async (req, res) => {
 
   try {
     await admin.auth().verifyIdToken(idToken);
-    const tokenDoc = await db.collection("quickbooks_tokens").doc(workspaceId).get();
+    const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
     if (!tokenDoc.exists) {
       return res.status(401).json({ error: "Not connected to QuickBooks" });
     }
@@ -266,7 +266,7 @@ app.post("/create-bills", async (req, res) => {
       const response = await oauthClient.refreshUsingToken(refreshToken);
       const newToken = response.getJson();
       accessToken = newToken.access_token;
-      await db.collection("quickbooks_tokens").doc(workspaceId).update({
+      await db.collection("quickbooksTokens").doc(workspaceId).update({
         accessToken: newToken.access_token,
         refreshToken: newToken.refresh_token,
         expiresIn: newToken.expires_in,
