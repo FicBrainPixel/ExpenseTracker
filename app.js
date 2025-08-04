@@ -67,12 +67,15 @@ app.post("/authUri", async (req, res) => {
     const userId = decodedToken.uid;
 
     const stateToken = uuidv4();
-    await db.collection("oauthStates").doc(stateToken).set({
-      userId,
-      workspaceId,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
-    });
+    await db
+      .collection("oauthStates")
+      .doc(stateToken)
+      .set({
+        userId,
+        workspaceId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      });
 
     const oauthClient = getOAuthClient();
     const authUri = oauthClient.authorizeUri({
@@ -133,18 +136,24 @@ app.post("/checkConnection", async (req, res) => {
     }
 
     await admin.auth().verifyIdToken(idToken);
-    const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
+    const tokenDoc = await db
+      .collection("quickbooksTokens")
+      .doc(workspaceId)
+      .get();
     if (!tokenDoc.exists) {
       return res.json({ connected: false });
     }
 
     const tokenData = tokenDoc.data();
     const now = Date.now() / 1000;
-    const expiresAt = (tokenData.createdAt.toDate().getTime() / 1000) + tokenData.expiresIn;
+    const expiresAt =
+      tokenData.createdAt.toDate().getTime() / 1000 + tokenData.expiresIn;
 
     if (now > expiresAt) {
       const oauthClient = getOAuthClient();
-      const response = await oauthClient.refreshUsingToken(tokenData.refreshToken);
+      const response = await oauthClient.refreshUsingToken(
+        tokenData.refreshToken
+      );
       const newToken = response.getJson();
       await db.collection("quickbooksTokens").doc(workspaceId).update({
         accessToken: newToken.access_token,
@@ -169,7 +178,10 @@ app.post("/disconnect", async (req, res) => {
     }
 
     await admin.auth().verifyIdToken(idToken);
-    const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
+    const tokenDoc = await db
+      .collection("quickbooksTokens")
+      .doc(workspaceId)
+      .get();
     if (tokenDoc.exists) {
       const { accessToken } = tokenDoc.data();
       const oauthClient = getOAuthClient();
@@ -185,6 +197,7 @@ app.post("/disconnect", async (req, res) => {
 });
 
 const entityMapping = {
+  "bank-accounts": "Account",
   categories: "Account",
   employees: "Employee",
   "payment-methods": "PaymentMethod",
@@ -209,19 +222,25 @@ app.post("/get-entity", async (req, res) => {
   const { idToken, workspaceId, entity } = req.body;
   const entityName = entityMapping[entity];
   if (!idToken || !workspaceId || !entityName) {
-    return res.status(400).json({ error: "Missing required fields or invalid entity" });
+    return res
+      .status(400)
+      .json({ error: "Missing required fields or invalid entity" });
   }
 
   try {
     await admin.auth().verifyIdToken(idToken);
-    const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
+    const tokenDoc = await db
+      .collection("quickbooksTokens")
+      .doc(workspaceId)
+      .get();
     if (!tokenDoc.exists) {
       return res.status(401).json({ error: "Not connected to QuickBooks" });
     }
 
-    let { accessToken, refreshToken, expiresIn, createdAt, realmId } = tokenDoc.data();
+    let { accessToken, refreshToken, expiresIn, createdAt, realmId } =
+      tokenDoc.data();
     const now = Date.now() / 1000;
-    const expiresAt = (createdAt.toDate().getTime() / 1000) + expiresIn;
+    const expiresAt = createdAt.toDate().getTime() / 1000 + expiresIn;
 
     if (now > expiresAt) {
       const oauthClient = getOAuthClient();
@@ -244,18 +263,77 @@ app.post("/get-entity", async (req, res) => {
   }
 });
 
+// app.post("/create-bills", async (req, res) => {
+//   const { idToken, workspaceId, bills } = req.body;
+//   if (!idToken || !workspaceId || !Array.isArray(bills) || bills.length === 0) {
+//     return res
+//       .status(400)
+//       .json({ error: "Missing required fields or invalid bills" });
+//   }
+
+//   try {
+//     await admin.auth().verifyIdToken(idToken);
+//     const tokenDoc = await db
+//       .collection("quickbooksTokens")
+//       .doc(workspaceId)
+//       .get();
+//     if (!tokenDoc.exists) {
+//       return res.status(401).json({ error: "Not connected to QuickBooks" });
+//     }
+
+//     let { accessToken, refreshToken, expiresIn, createdAt, realmId } =
+//       tokenDoc.data();
+//     const now = Date.now() / 1000;
+//     const expiresAt = createdAt.toDate().getTime() / 1000 + expiresIn;
+
+//     if (now > expiresAt) {
+//       const oauthClient = getOAuthClient();
+//       const response = await oauthClient.refreshUsingToken(refreshToken);
+//       const newToken = response.getJson();
+//       accessToken = newToken.access_token;
+//       await db.collection("quickbooksTokens").doc(workspaceId).update({
+//         accessToken: newToken.access_token,
+//         refreshToken: newToken.refresh_token,
+//         expiresIn: newToken.expires_in,
+//         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+//       });
+//     }
+
+//     const batchRequests = bills.map((bill, idx) => ({
+//       bId: `bill${idx + 1}`,
+//       operation: "create",
+//       Bill: bill,
+//     }));
+
+//     const batchPayload = { BatchItemRequest: batchRequests };
+//     const url = `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/batch`;
+//     const qbResp = await axios.post(url, batchPayload, {
+//       headers: {
+//         Authorization: `Bearer ${accessToken}`,
+//         Accept: "application/json",
+//       },
+//     });
+
+//     res.json(qbResp.data);
+//   } catch (err) {
+//     console.error("Error creating bills", err.response?.data || err.message);
+//     res.status(500).json({
+//       error: err.response?.data || "Failed to create bills in QuickBooks",
+//     });
+//   }
+// });
+
 app.post("/create-bills", async (req, res) => {
-  const { idToken, workspaceId, bills } = req.body;
-  if (!idToken || !workspaceId || !Array.isArray(bills) || bills.length === 0) {
-    return res.status(400).json({ error: "Missing required fields or invalid bills" });
+  const { idToken, workspaceId, bills = [], checks = [] } = req.body;
+
+  if (!idToken || !workspaceId || (!bills.length && !checks.length)) {
+    return res.status(400).json({ error: "Missing required fields or empty payload" });
   }
 
   try {
     await admin.auth().verifyIdToken(idToken);
     const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
-    if (!tokenDoc.exists) {
-      return res.status(401).json({ error: "Not connected to QuickBooks" });
-    }
+    if (!tokenDoc.exists) return res.status(401).json({ error: "Not connected to QuickBooks" });
 
     let { accessToken, refreshToken, expiresIn, createdAt, realmId } = tokenDoc.data();
     const now = Date.now() / 1000;
@@ -263,38 +341,48 @@ app.post("/create-bills", async (req, res) => {
 
     if (now > expiresAt) {
       const oauthClient = getOAuthClient();
-      const response = await oauthClient.refreshUsingToken(refreshToken);
-      const newToken = response.getJson();
+      const newToken = (await oauthClient.refreshUsingToken(refreshToken)).getJson();
       accessToken = newToken.access_token;
       await db.collection("quickbooksTokens").doc(workspaceId).update({
-        accessToken: newToken.access_token,
-        refreshToken: newToken.refresh_token,
+        accessToken, refreshToken: newToken.refresh_token,
         expiresIn: newToken.expires_in,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
 
-    const batchRequests = bills.map((bill, idx) => ({
-      bId: `bill${idx + 1}`,
-      operation: "create",
-      Bill: bill,
-    }));
+    const batchRequests = [];
+
+    bills.forEach((bill, idx) => {
+      batchRequests.push({
+        bId: `bill${idx + 1}`,
+        operation: "create",
+        Bill: bill,
+      });
+    });
+
+    checks.forEach((check, idx) => {
+      batchRequests.push({
+        bId: `check${idx + 1}`,
+        operation: "create",
+        Check: check,
+      });
+    });
 
     const batchPayload = { BatchItemRequest: batchRequests };
     const url = `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/batch`;
+
     const qbResp = await axios.post(url, batchPayload, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
-      },
+        "Content-Type": "application/json"
+      }
     });
 
     res.json(qbResp.data);
   } catch (err) {
-    console.error("Error creating bills", err.response?.data || err.message);
-    res.status(500).json({
-      error: err.response?.data || "Failed to create bills in QuickBooks",
-    });
+    console.error("Error creating bills/checks", err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data || "Failed to create bills/checks" });
   }
 });
 
