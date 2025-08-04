@@ -24,9 +24,7 @@ try {
   throw new Error("Firebase Admin SDK initialization failed");
 }
 
-// Initialize Firebase Admin SDK
 const db = admin.firestore();
-
 const app = express();
 
 const allowedOrigins = [
@@ -49,9 +47,6 @@ app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-let oauthClient = null;
-let oauth2_token_json = null;
-
 const getOAuthClient = () =>
   new OAuthClient({
     clientId: process.env.QUICKBOOKS_CLIENT_ID,
@@ -60,23 +55,26 @@ const getOAuthClient = () =>
     redirectUri: process.env.QUICKBOOKS_REDIRECT_URI,
   });
 
-app.get("/oauthClient-null", function (req, res) {
+// Generate and store a temporary state token
+app.post("/authUri", async (req, res) => {
   try {
-    oauthClient = getOAuthClient();
+    const { idToken, workspaceId } = req.body;
+    if (!idToken || !workspaceId) {
+      return res.status(400).json({ error: "Missing idToken or workspaceId" });
+    }
 
-    res.status(200).json({
-      message: "done",
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+
+    const stateToken = uuidv4();
+    await db.collection("oauth_states").doc(stateToken).set({
+      userId,
+      workspaceId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
     });
-  } catch (err) {
-    console.error("Error:", err);
-    res.status(500).send("Error setting OAuth");
-  }
-});
 
-app.get("/authUri", (req, res) => {
-  try {
-    oauthClient = getOAuthClient();
-
+    const oauthClient = getOAuthClient();
     const authUri = oauthClient.authorizeUri({
       scope: [
         OAuthClient.scopes.Accounting,
@@ -84,11 +82,10 @@ app.get("/authUri", (req, res) => {
         OAuthClient.scopes.Profile,
         OAuthClient.scopes.Email,
       ],
-      state: "intuit-test",
+      state: stateToken,
     });
 
-    console.log("Auth URI:", authUri);
-    res.send(authUri);
+    res.json({ authUri });
   } catch (err) {
     console.error("Auth URI Error:", err);
     res.status(500).send("Error generating authUri");
@@ -97,10 +94,30 @@ app.get("/authUri", (req, res) => {
 
 app.get("/callback", async (req, res) => {
   try {
-    oauthClient = getOAuthClient();
+    const oauthClient = getOAuthClient();
     const authResponse = await oauthClient.createToken(req.url);
-    oauth2_token_json = authResponse.getJson();
-    oauth2_token_json.realmId = oauthClient.getToken().realmId;
+    const tokenJson = authResponse.getJson();
+    tokenJson.realmId = oauthClient.getToken().realmId;
+
+    const stateToken = oauthClient.getToken().state;
+    const stateDoc = await db.collection("oauth_states").doc(stateToken).get();
+    if (!stateDoc.exists) {
+      throw new Error("Invalid state token");
+    }
+    const { workspaceId } = stateDoc.data();
+
+    await db.collection("quickbooks_tokens").doc(workspaceId).set({
+      workspaceId,
+      accessToken: tokenJson.access_token,
+      refreshToken: tokenJson.refresh_token,
+      expiresIn: tokenJson.expires_in,
+      tokenType: tokenJson.token_type,
+      realmId: tokenJson.realmId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await db.collection("oauth_states").doc(stateToken).delete();
     res.send(`<script>window.close();</script>`);
   } catch (e) {
     console.error("Callback error", e);
@@ -108,34 +125,58 @@ app.get("/callback", async (req, res) => {
   }
 });
 
-app.get("/retrieveToken", (req, res) => {
+app.post("/checkConnection", async (req, res) => {
   try {
-    res.send(oauthClient);
-  } catch (err) {
-    res.status(500).json({ error: "Unable to retrive token" });
-  }
-});
+    const { idToken, workspaceId } = req.body;
+    if (!idToken || !workspaceId) {
+      return res.status(400).json({ error: "Missing idToken or workspaceId" });
+    }
 
-app.post("/refreshAccessToken", async (req, res) => {
-  try {
-    const refresh_token = req.body.token?.refresh_token;
-    const client = getOAuthClient();
-    const response = await client.refreshUsingToken(refresh_token);
-    oauth2_token_json = response.getJson();
-    res.json({ token: oauth2_token_json });
+    await admin.auth().verifyIdToken(idToken);
+    const tokenDoc = await db.collection("quickbooks_tokens").doc(workspaceId).get();
+    if (!tokenDoc.exists) {
+      return res.json({ connected: false });
+    }
+
+    const tokenData = tokenDoc.data();
+    const now = Date.now() / 1000;
+    const expiresAt = (tokenData.createdAt.toDate().getTime() / 1000) + tokenData.expiresIn;
+
+    if (now > expiresAt) {
+      const oauthClient = getOAuthClient();
+      const response = await oauthClient.refreshUsingToken(tokenData.refreshToken);
+      const newToken = response.getJson();
+      await db.collection("quickbooks_tokens").doc(workspaceId).update({
+        accessToken: newToken.access_token,
+        refreshToken: newToken.refresh_token,
+        expiresIn: newToken.expires_in,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    res.json({ connected: true });
   } catch (error) {
-    console.error("Refresh error", error);
-    res.status(400).json({ error: "Unable to refresh token" });
+    console.error("Check connection error", error);
+    res.status(500).json({ error: "Failed to check connection" });
   }
 });
 
 app.post("/disconnect", async (req, res) => {
   try {
-    const access_token = req.body.token?.access_token;
-    const client = getOAuthClient();
-    await client.revoke({ access_token });
-    oauthClient = null;
-    oauth2_token_json = null;
+    const { idToken, workspaceId } = req.body;
+    if (!idToken || !workspaceId) {
+      return res.status(400).json({ error: "Missing idToken or workspaceId" });
+    }
+
+    await admin.auth().verifyIdToken(idToken);
+    const tokenDoc = await db.collection("quickbooks_tokens").doc(workspaceId).get();
+    if (tokenDoc.exists) {
+      const { accessToken } = tokenDoc.data();
+      const oauthClient = getOAuthClient();
+      await oauthClient.revoke({ access_token: accessToken });
+      await db.collection("quickbooks_tokens").doc(workspaceId).delete();
+    }
+
     res.json({ result: "Disconnected" });
   } catch (error) {
     console.error("Disconnect error", error);
@@ -164,65 +205,100 @@ async function fetchEntity(entityName, accessToken, realmId) {
   return response.data;
 }
 
-app.get("/get-:item", async (req, res) => {
-  const item = req.params.item;
-  const entityName = entityMapping[item];
-  if (!entityName) {
-    return res.status(400).json({ error: "Invalid item" });
+app.post("/get-entity", async (req, res) => {
+  const { idToken, workspaceId, entity } = req.body;
+  const entityName = entityMapping[entity];
+  if (!idToken || !workspaceId || !entityName) {
+    return res.status(400).json({ error: "Missing required fields or invalid entity" });
   }
+
   try {
-    const accessToken = oauth2_token_json.access_token;
-    const realmId = oauth2_token_json.realmId;
+    await admin.auth().verifyIdToken(idToken);
+    const tokenDoc = await db.collection("quickbooks_tokens").doc(workspaceId).get();
+    if (!tokenDoc.exists) {
+      return res.status(401).json({ error: "Not connected to QuickBooks" });
+    }
+
+    let { accessToken, refreshToken, expiresIn, createdAt, realmId } = tokenDoc.data();
+    const now = Date.now() / 1000;
+    const expiresAt = (createdAt.toDate().getTime() / 1000) + expiresIn;
+
+    if (now > expiresAt) {
+      const oauthClient = getOAuthClient();
+      const response = await oauthClient.refreshUsingToken(refreshToken);
+      const newToken = response.getJson();
+      accessToken = newToken.access_token;
+      await db.collection("quickbooks_tokens").doc(workspaceId).update({
+        accessToken: newToken.access_token,
+        refreshToken: newToken.refresh_token,
+        expiresIn: newToken.expires_in,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
     const data = await fetchEntity(entityName, accessToken, realmId);
     res.json(data);
   } catch (err) {
-    console.error(`Error fetching ${item}`, err.response?.data || err);
-    res.status(500).json({ error: `Failed to fetch ${item}` });
+    console.error(`Error fetching ${entity}`, err.response?.data || err);
+    res.status(500).json({ error: `Failed to fetch ${entity}` });
   }
 });
 
-app.post('/create-bills', async (req, res) => {
-  const bills = req.body.bills;
-  if (!Array.isArray(bills) || bills.length === 0) {
-    return res.status(400).json({ error: 'Request must include a non-empty bills array' });
+app.post("/create-bills", async (req, res) => {
+  const { idToken, workspaceId, bills } = req.body;
+  if (!idToken || !workspaceId || !Array.isArray(bills) || bills.length === 0) {
+    return res.status(400).json({ error: "Missing required fields or invalid bills" });
   }
 
   try {
-    // await ensureAccessToken();
+    await admin.auth().verifyIdToken(idToken);
+    const tokenDoc = await db.collection("quickbooks_tokens").doc(workspaceId).get();
+    if (!tokenDoc.exists) {
+      return res.status(401).json({ error: "Not connected to QuickBooks" });
+    }
 
-    // Build the batch payload
+    let { accessToken, refreshToken, expiresIn, createdAt, realmId } = tokenDoc.data();
+    const now = Date.now() / 1000;
+    const expiresAt = (createdAt.toDate().getTime() / 1000) + expiresIn;
+
+    if (now > expiresAt) {
+      const oauthClient = getOAuthClient();
+      const response = await oauthClient.refreshUsingToken(refreshToken);
+      const newToken = response.getJson();
+      accessToken = newToken.access_token;
+      await db.collection("quickbooks_tokens").doc(workspaceId).update({
+        accessToken: newToken.access_token,
+        refreshToken: newToken.refresh_token,
+        expiresIn: newToken.expires_in,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
     const batchRequests = bills.map((bill, idx) => ({
-      bId:     `bill${idx + 1}`,
-      operation: 'create',
-      Bill:    bill
+      bId: `bill${idx + 1}`,
+      operation: "create",
+      Bill: bill,
     }));
-  
+
     const batchPayload = { BatchItemRequest: batchRequests };
-    const accessToken = oauth2_token_json.access_token;
-    const realmId = oauth2_token_json.realmId;
-
-    console.log(JSON.stringify(batchPayload, null, 2));
-
-    // send to QuickBooks batch endpoint
     const url = `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/batch`;
     const qbResp = await axios.post(url, batchPayload, {
-      // params: { minorversion: 63 },
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
       },
     });
 
-    // return the raw QuickBooks response (or parse out successes/errors)
     res.json(qbResp.data);
   } catch (err) {
-    console.error('Error creating bills', err.response?.data || err.message);
+    console.error("Error creating bills", err.response?.data || err.message);
     res.status(500).json({
-      error: err.response?.data || 'Failed to create bills in QuickBooks'
+      error: err.response?.data || "Failed to create bills in QuickBooks",
     });
   }
 });
 
+// Existing /send-invitation and /validate-invite endpoints remain unchanged
 app.post("/send-invitation", async (req, res) => {
   try {
     const {
@@ -234,7 +310,6 @@ app.post("/send-invitation", async (req, res) => {
       inviteeRole,
     } = req.body;
 
-    // Validate request body
     if (
       !workspaceId ||
       !workspaceName ||
@@ -246,7 +321,6 @@ app.post("/send-invitation", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Verify Firebase ID token for authentication
     const idToken = req.headers.authorization?.split("Bearer ")[1];
     if (!idToken) {
       return res
@@ -255,11 +329,9 @@ app.post("/send-invitation", async (req, res) => {
     }
     await admin.auth().verifyIdToken(idToken);
 
-    // Generate a unique token
     const token = uuidv4();
-    const expirationTime = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const expirationTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // Store invitation in Firestore
     await db.collection("invitations").add({
       token: token,
       used: false,
@@ -272,10 +344,7 @@ app.post("/send-invitation", async (req, res) => {
       expirationTime: expirationTime,
     });
 
-    // Create invitation link
     const invitationLink = `${process.env.WEB_URL}/invite?token=${token}`;
-
-    // Send email via Resend
     const response = await axios.post(
       "https://api.resend.com/emails",
       {
@@ -306,15 +375,12 @@ app.post("/send-invitation", async (req, res) => {
 app.post("/validate-invite", async (req, res) => {
   try {
     const { token } = req.body;
-
-    // Check if token is provided
     if (!token) {
       return res
         .status(400)
         .json({ valid: false, message: "Token is required" });
     }
 
-    // Query Firestore for the token
     const snapshot = await db
       .collection("invitations")
       .where("token", "==", token)
@@ -327,8 +393,6 @@ app.post("/validate-invite", async (req, res) => {
 
     const doc = snapshot.docs[0];
     const data = doc.data();
-
-    // Check expiration
     const now = new Date();
     const expires =
       data.expirationTime?.toDate?.() || new Date(data.expirationTime);
@@ -342,7 +406,6 @@ app.post("/validate-invite", async (req, res) => {
         .json({ valid: false, message: "Token already used" });
     }
 
-    // Success — return invite details for registration
     return res.json({
       valid: true,
       workspaceId: data.workspaceId,
@@ -355,25 +418,6 @@ app.post("/validate-invite", async (req, res) => {
   } catch (error) {
     console.error("Error validating invitation:", error);
     return res.status(500).json({ valid: false, message: "Server error" });
-  }
-});
-
-app.post("/sync-to-qb", async (req, res) => {
-  const idToken = req.headers.authorization?.split('Bearer ')[1];
-
-  try {
-    const decoded = await admin.auth().verifyIdToken(idToken);
-    const userId = decoded.uid;
-
-    // Optional: Check if user is admin of workspace, etc.
-    if (!userIsAuthorized(userId)) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-
-    await syncExpensesToQuickBooks(userId);
-    res.json({ success: true });
-  } catch (err) {
-    return res.status(401).json({ error: "Unauthorized" });
   }
 });
 
