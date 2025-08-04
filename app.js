@@ -326,25 +326,40 @@ app.post("/get-entity", async (req, res) => {
 app.post("/create-bills", async (req, res) => {
   const { idToken, workspaceId, bills = [], checks = [] } = req.body;
 
-  if (!idToken || !workspaceId || (!bills.length && !checks.length)) {
-    return res.status(400).json({ error: "Missing required fields or empty payload" });
+  if (
+    !idToken ||
+    !workspaceId ||
+    ((!Array.isArray(bills) || bills.length === 0) &&
+      (!Array.isArray(checks) || checks.length === 0))
+  ) {
+    return res
+      .status(400)
+      .json({ error: "Missing required fields or empty payload" });
   }
 
   try {
     await admin.auth().verifyIdToken(idToken);
-    const tokenDoc = await db.collection("quickbooksTokens").doc(workspaceId).get();
-    if (!tokenDoc.exists) return res.status(401).json({ error: "Not connected to QuickBooks" });
+    const tokenDoc = await db
+      .collection("quickbooksTokens")
+      .doc(workspaceId)
+      .get();
+    if (!tokenDoc.exists)
+      return res.status(401).json({ error: "Not connected to QuickBooks" });
 
-    let { accessToken, refreshToken, expiresIn, createdAt, realmId } = tokenDoc.data();
+    let { accessToken, refreshToken, expiresIn, createdAt, realmId } =
+      tokenDoc.data();
     const now = Date.now() / 1000;
-    const expiresAt = (createdAt.toDate().getTime() / 1000) + expiresIn;
+    const expiresAt = createdAt.toDate().getTime() / 1000 + expiresIn;
 
     if (now > expiresAt) {
       const oauthClient = getOAuthClient();
-      const newToken = (await oauthClient.refreshUsingToken(refreshToken)).getJson();
+      const newToken = (
+        await oauthClient.refreshUsingToken(refreshToken)
+      ).getJson();
       accessToken = newToken.access_token;
       await db.collection("quickbooksTokens").doc(workspaceId).update({
-        accessToken, refreshToken: newToken.refresh_token,
+        accessToken,
+        refreshToken: newToken.refresh_token,
         expiresIn: newToken.expires_in,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
@@ -375,14 +390,19 @@ app.post("/create-bills", async (req, res) => {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
-        "Content-Type": "application/json"
-      }
+        "Content-Type": "application/json",
+      },
     });
 
     res.json(qbResp.data);
   } catch (err) {
-    console.error("Error creating bills/checks", err.response?.data || err.message);
-    res.status(500).json({ error: err.response?.data || "Failed to create bills/checks" });
+    console.error(
+      "Error creating bills/checks",
+      err.response?.data || err.message
+    );
+    res
+      .status(500)
+      .json({ error: err.response?.data || "Failed to create bills/checks" });
   }
 });
 
