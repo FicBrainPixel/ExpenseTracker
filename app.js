@@ -384,6 +384,7 @@ app.post("/create-bills", async (req, res) => {
     });
 
     const batchPayload = { BatchItemRequest: batchRequests };
+    console.log(JSON.stringify(batchPayload, null, 2));
     const url = `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/batch`;
 
     const qbResp = await axios.post(url, batchPayload, {
