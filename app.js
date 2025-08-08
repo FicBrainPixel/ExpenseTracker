@@ -196,26 +196,64 @@ app.post("/disconnect", async (req, res) => {
   }
 });
 
+// const entityMapping = {
+//   "bank-accounts": "Account",
+//   categories: "Account",
+//   employees: "Employee",
+//   "credit-cards": "Account",
+//   vendors: "Vendor",
+//   customers: "Customer",
+// };
+
+// async function fetchEntity(entityName, accessToken, realmId) {
+//   const response = await axios.get(
+//     `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT * FROM ${entityName}`,
+//     {
+//       headers: {
+//         Authorization: `Bearer ${accessToken}`,
+//         Accept: "application/json",
+//       },
+//     }
+//   );
+//   return response.data;
+// }
+
 const entityMapping = {
-  "bank-accounts": "Account",
-  categories: "Account",
-  employees: "Employee",
-  "payment-methods": "PaymentMethod",
-  vendors: "Vendor",
-  customers: "Customer",
+  "bank-accounts": { entity: "Account", filter: "WHERE AccountType = 'Bank'" },
+  categories: { entity: "Account", filter: "WHERE AccountType = 'Expense'" },
+  "credit-cards": {
+    entity: "Account",
+    filter: "WHERE AccountType = 'Credit Card'",
+  },
+  employees: { entity: "Employee", filter: "" },
+  vendors: { entity: "Vendor", filter: "" },
+  customers: { entity: "Customer", filter: "" },
 };
 
 async function fetchEntity(entityName, accessToken, realmId) {
-  const response = await axios.get(
-    `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT * FROM ${entityName}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-      },
-    }
-  );
-  return response.data;
+  const { entity, filter } = entityMapping[entityName];
+  const query = `SELECT * FROM ${entity} ${filter}`.trim();
+
+  try {
+    const response = await axios.get(
+      `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=${encodeURIComponent(
+        query
+      )}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error(
+      `Error fetching ${entityName}:`,
+      error.response?.data || error.message
+    );
+    throw error;
+  }
 }
 
 app.post("/get-entity", async (req, res) => {
