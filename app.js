@@ -258,11 +258,12 @@ async function fetchEntity(entityName, accessToken, realmId) {
 
 app.post("/get-entity", async (req, res) => {
   const { idToken, workspaceId, entity } = req.body;
-  const entityName = entityMapping[entity];
-  if (!idToken || !workspaceId || !entityName) {
-    return res
-      .status(400)
-      .json({ error: "Missing required fields or invalid entity" });
+  // Check for missing fields and validate entity
+  if (!idToken || !workspaceId || !entity) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  if (!entityMapping[entity]) {
+    return res.status(400).json({ error: "Invalid entity" });
   }
 
   try {
@@ -293,7 +294,8 @@ app.post("/get-entity", async (req, res) => {
       });
     }
 
-    const data = await fetchEntity(entityName, accessToken, realmId);
+    // Pass entity directly to fetchEntity
+    const data = await fetchEntity(entity, accessToken, realmId);
     res.json(data);
   } catch (err) {
     console.error(`Error fetching ${entity}`, err.response?.data || err);
