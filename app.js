@@ -364,13 +364,22 @@ app.post("/get-entity", async (req, res) => {
 // });
 
 app.post("/create-bills", async (req, res) => {
-  const { idToken, workspaceId, bills = [], purchase = [] } = req.body;
+  const {
+    idToken,
+    workspaceId,
+    bills = [],
+    checks = [],
+    expenses = [],
+    ccCharges = [],
+  } = req.body;
 
   if (
     !idToken ||
     !workspaceId ||
     ((!Array.isArray(bills) || bills.length === 0) &&
-      (!Array.isArray(purchase) || purchase.length === 0))
+      (!Array.isArray(checks) || checks.length === 0) &&
+      (!Array.isArray(expenses) || expenses.length === 0) &&
+      (!Array.isArray(ccCharges) || ccCharges.length === 0))
   ) {
     return res
       .status(400)
@@ -415,12 +424,32 @@ app.post("/create-bills", async (req, res) => {
       });
     });
 
-    purchase.forEach((purchase, idx) => {
+    checks.forEach((check, idx) => {
       batchRequests.push({
         bId: `purchase${idx + 1}`,
         operation: "create",
-        Purchase: purchase,
+        Purchase: check,
       });
+    });
+
+    expenses.forEach((expense, idx) => {
+      if (Object.keys(expense).length > 0) {
+        batchRequests.push({
+          bId: `expense${idx + 1}`,
+          operation: "create",
+          Purchase: expense,
+        });
+      }
+    });
+
+    ccCharges.forEach((ccCharge, idx) => {
+      if (Object.keys(ccCharge).length > 0) {
+        batchRequests.push({
+          bId: `ccCharge${idx + 1}`,
+          operation: "create",
+          Purchase: ccCharge,
+        });
+      }
     });
 
     const batchPayload = { BatchItemRequest: batchRequests };
