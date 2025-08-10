@@ -364,13 +364,13 @@ app.post("/get-entity", async (req, res) => {
 // });
 
 app.post("/create-bills", async (req, res) => {
-  const { idToken, workspaceId, bills = [], checks = [] } = req.body;
+  const { idToken, workspaceId, bills = [], purchase = [] } = req.body;
 
   if (
     !idToken ||
     !workspaceId ||
     ((!Array.isArray(bills) || bills.length === 0) &&
-      (!Array.isArray(checks) || checks.length === 0))
+      (!Array.isArray(purchase) || purchase.length === 0))
   ) {
     return res
       .status(400)
@@ -415,11 +415,11 @@ app.post("/create-bills", async (req, res) => {
       });
     });
 
-    checks.forEach((check, idx) => {
+    purchase.forEach((purchase, idx) => {
       batchRequests.push({
-        bId: `check${idx + 1}`,
+        bId: `purchase${idx + 1}`,
         operation: "create",
-        Check: check,
+        Purchase: purchase,
       });
     });
 
