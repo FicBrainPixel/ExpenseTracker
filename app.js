@@ -47,6 +47,44 @@ app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
+// Sign-in endpoint
+app.post('/signin', async (req, res) => {
+  const { idToken } = req.body;
+
+  // Input validation
+  if (!idToken) {
+    return res.status(400).json({ error: 'ID token required' });
+  }
+
+  try {
+    // Verify ID token
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+
+    // Fetch user data
+    const user = await admin.auth().getUser(uid);
+
+    // Update user document in Firestore
+    await admin.firestore().collection('users').doc(uid).set(
+      {
+        email: user.email,
+        lastLogin: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Return minimal user data
+    res.status(200).json({
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName || null,
+    });
+  } catch (error) {
+    console.error('Sign-in error:', error);
+    res.status(401).json({ error: 'Invalid credentials or unauthorized' });
+  }
+});
+
 const getOAuthClient = () =>
   new OAuthClient({
     clientId: process.env.QUICKBOOKS_CLIENT_ID,
